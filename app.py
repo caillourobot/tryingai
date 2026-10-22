@@ -34,6 +34,7 @@ st.title("AviaWake")
 st.caption("Pilot Fatigue & Readiness Tracker")
 
 CSV_PATH = "reaction_history.csv"
+ORIENTATION_CSV_PATH = "orientation_history.csv"
 
 
 def calculate_readiness_score(sleep_hours, reaction_ms):
@@ -71,6 +72,27 @@ if "result_history" not in st.session_state:
             st.session_state.result_history = []
     else:
         st.session_state.result_history = []
+
+if "orientation_state" not in st.session_state:
+    st.session_state.orientation_state = "idle"
+if "orientation_target" not in st.session_state:
+    st.session_state.orientation_target = 0
+if "orientation_start" not in st.session_state:
+    st.session_state.orientation_start = None
+if "orientation_answer" not in st.session_state:
+    st.session_state.orientation_answer = "left"
+if "orientation_history" not in st.session_state:
+    if os.path.exists(ORIENTATION_CSV_PATH):
+        try:
+            saved_df = pd.read_csv(ORIENTATION_CSV_PATH)
+            if not saved_df.empty:
+                st.session_state.orientation_history = saved_df.to_dict("records")
+            else:
+                st.session_state.orientation_history = []
+        except Exception:
+            st.session_state.orientation_history = []
+    else:
+        st.session_state.orientation_history = []
 
 sleep = st.slider("Hours slept last night", 0, 12, 8)
 
@@ -161,3 +183,83 @@ if st.session_state.result_history and st.session_state.reaction_state not in ["
         st.markdown("---")
         st.subheader("Recent results")
         st.dataframe(history_df.tail(5), use_container_width=True)
+
+st.markdown("---")
+st.subheader("Orientation challenge")
+
+if st.button("Start orientation drill", key="orientation_start", use_container_width=True):
+    st.session_state.orientation_state = "ready"
+    st.session_state.orientation_target = random.choice([-60, -45, -30, 30, 45, 60])
+    st.session_state.orientation_start = time.time()
+    st.session_state.orientation_answer = "left" if st.session_state.orientation_target < 0 else "right"
+
+if st.session_state.orientation_state == "ready":
+    tilt = st.session_state.orientation_target
+    st.markdown(
+        f"<div style='text-align:center; font-size:120px; transform: rotate({tilt}deg);'>✈️</div>",
+        unsafe_allow_html=True,
+    )
+    st.write(f"Correct the aircraft to level: {st.session_state.orientation_answer.upper()} tilt")
+
+    col_left, col_right = st.columns(2)
+    with col_left:
+        if st.button("LEFT", key="ori_left", use_container_width=True):
+            elapsed_ms = int((time.time() - st.session_state.orientation_start) * 1000)
+            accuracy = 1 if st.session_state.orientation_answer == "left" else 0
+            result = {
+                "time": datetime.now().strftime("%m/%d %I:%M %p"),
+                "response_ms": elapsed_ms,
+                "accuracy": accuracy,
+                "expected_direction": st.session_state.orientation_answer,
+                "selected_direction": "left",
+            }
+            st.session_state.orientation_history.append(result)
+            pd.DataFrame(st.session_state.orientation_history).to_csv(ORIENTATION_CSV_PATH, index=False)
+            st.session_state.orientation_state = "result"
+            st.session_state.orientation_last_ms = elapsed_ms
+            st.session_state.orientation_last_accuracy = accuracy
+
+    with col_right:
+        if st.button("RIGHT", key="ori_right", use_container_width=True):
+            elapsed_ms = int((time.time() - st.session_state.orientation_start) * 1000)
+            accuracy = 1 if st.session_state.orientation_answer == "right" else 0
+            result = {
+                "time": datetime.now().strftime("%m/%d %I:%M %p"),
+                "response_ms": elapsed_ms,
+                "accuracy": accuracy,
+                "expected_direction": st.session_state.orientation_answer,
+                "selected_direction": "right",
+            }
+            st.session_state.orientation_history.append(result)
+            pd.DataFrame(st.session_state.orientation_history).to_csv(ORIENTATION_CSV_PATH, index=False)
+            st.session_state.orientation_state = "result"
+            st.session_state.orientation_last_ms = elapsed_ms
+            st.session_state.orientation_last_accuracy = accuracy
+
+if st.session_state.orientation_state == "result":
+    speed = st.session_state.orientation_last_ms
+    accuracy = st.session_state.orientation_last_accuracy
+    accuracy_pct = 100 if accuracy == 1 else 0
+
+    st.metric("Orientation speed", f"{speed} ms")
+    st.metric("Accuracy", f"{accuracy_pct}%")
+
+    if st.button("Try another orientation", key="orientation_retry", use_container_width=True):
+        st.session_state.orientation_state = "ready"
+        st.session_state.orientation_target = random.choice([-60, -45, -30, 30, 45, 60])
+        st.session_state.orientation_start = time.time()
+        st.session_state.orientation_answer = "left" if st.session_state.orientation_target < 0 else "right"
+
+    if st.session_state.orientation_history:
+        hist = pd.DataFrame(st.session_state.orientation_history)
+        avg_speed = round(hist["response_ms"].mean())
+        avg_accuracy = round(hist["accuracy"].mean() * 100)
+        st.write(f"Average speed: {avg_speed} ms")
+        st.write(f"Average accuracy: {avg_accuracy}%")
+        st.dataframe(hist.tail(5), use_container_width=True)
+
+if st.session_state.orientation_history and st.session_state.orientation_state == "idle":
+    hist = pd.DataFrame(st.session_state.orientation_history)
+    if not hist.empty:
+        st.write("Latest orientation results:")
+        st.dataframe(hist.tail(5), use_container_width=True)
