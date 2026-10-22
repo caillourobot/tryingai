@@ -6,7 +6,7 @@ st.set_page_config(page_title="AviaWake", page_icon=":airplane:"
 st.markdown("<style>@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap'); h1{font-family:'Playfair Display', serif !important; font-weight:700;}</style>", unsafe_allow_html=True)
 
 st.title("AviaWake")
-st.write(Pilot Fatigue & Readiness Tracker")
+st.write("Pilot Fatigue & Readiness Tracker")
 sleep = st.slider("Hours slept last night", 0, 12, 8)
 st.write("---"
 
