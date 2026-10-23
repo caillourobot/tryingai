@@ -303,7 +303,8 @@ with tabs[2]:
     st.subheader("Orientation drill")
     if st.button("Start orientation drill", key="orientation_start", use_container_width=True):
         st.session_state.orientation_state = "showing"
-        st.session_state.orientation_target = random.choice([-60, -45, -30, 30, 45, 60])
+        harder_tilt_options = [-90, -75, -60, -45, -30, -20, -10, 10, 20, 30, 45, 60, 75, 90]
+        st.session_state.orientation_target = random.choice(harder_tilt_options)
         st.session_state.orientation_start_time = time.time()
         st.session_state.orientation_expected = "left" if st.session_state.orientation_target < 0 else "right"
         st.session_state.orientation_last_result = None
@@ -314,7 +315,7 @@ with tabs[2]:
             f"<div style='text-align:center; font-size:120px; transform: rotate({tilt}deg);'>✈️</div>",
             unsafe_allow_html=True,
         )
-        st.write(f"Choose the direction that brings the aircraft back to level.")
+        st.write("Choose the direction that brings the aircraft back to level. The bank angles are now steeper and more varied.")
 
         col_left, col_right = st.columns(2)
         with col_left:
@@ -387,7 +388,7 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("Memory challenge")
     if st.button("Start memory challenge", key="memory_start", use_container_width=True):
-        sequence_length = random.randint(3, 5)
+        sequence_length = random.randint(4, 7)
         st.session_state.memory_sequence = random.sample(memory_icons, sequence_length)
         st.session_state.memory_guess = []
         st.session_state.memory_started_at = time.time()
@@ -400,7 +401,7 @@ with tabs[3]:
             f"<div style='font-size:60px; text-align:center'> {' '.join(st.session_state.memory_sequence)} </div>",
             unsafe_allow_html=True,
         )
-        if time.time() - st.session_state.memory_started_at >= 3:
+        if time.time() - st.session_state.memory_started_at >= 2.5:
             st.session_state.memory_state = "guessing"
 
     if st.session_state.memory_state == "guessing":
