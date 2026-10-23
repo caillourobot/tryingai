@@ -260,7 +260,7 @@ with tabs[1]:
     st.subheader("Reaction test")
     if st.button("Start reaction test", key="reaction_start", use_container_width=True):
         st.session_state.reaction_state = "waiting"
-        st.session_state.reaction_ready_time = time.time() + random.uniform(2, 5)
+        st.session_state.reaction_ready_time = time.time() + random.uniform(2, 8)
         st.session_state.reaction_start_time = None
 
     if st.session_state.reaction_state == "waiting":
