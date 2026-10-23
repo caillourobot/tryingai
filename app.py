@@ -54,6 +54,28 @@ def calculate_readiness_score(sleep_hours, reaction_ms):
     return score, label
 
 
+def get_strength_label(score):
+    if score >= 80:
+        return "Ready"
+    elif score >= 65:
+        return "Monitor"
+    else:
+        return "Not recommended for duty"
+
+
+def get_readiness_message(score):
+    if score >= 80:
+        return "Strong readiness. Cognitive speed and sleep are in a healthy range."
+    elif score >= 65:
+        return "Moderate readiness. Consider monitoring workload and fatigue closely."
+    else:
+        return "Low readiness. Consider delaying demanding tasks or reducing workload."
+
+
+if "pilot_name" not in st.session_state:
+    st.session_state.pilot_name = "Pilot 1"
+if "notes" not in st.session_state:
+    st.session_state.notes = ""
 if "reaction_state" not in st.session_state:
     st.session_state.reaction_state = "idle"
 if "ready_time" not in st.session_state:
@@ -94,22 +116,33 @@ if "orientation_history" not in st.session_state:
     else:
         st.session_state.orientation_history = []
 
+st.session_state.pilot_name = st.text_input("Pilot name", value=st.session_state.pilot_name)
+st.session_state.notes = st.text_area("Notes", value=st.session_state.notes, placeholder="Late night, missed meal, stress, etc.")
+
 sleep = st.slider("Hours slept last night", 0, 12, 8)
+mission_phase = st.selectbox("Mission phase", ["Cruise", "Approach", "Taxi", "High workload"])
 
 st.markdown("---")
 
-col1, col2 = st.columns([1, 1])
+col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     if st.button("Start reaction test", use_container_width=True):
         st.session_state.reaction_state = "waiting"
         st.session_state.ready_time = time.time() + random.uniform(2, 5)
         st.session_state.start_time = None
-
 with col2:
     if st.button("Reset", use_container_width=True):
         st.session_state.reaction_state = "idle"
         st.session_state.ready_time = None
         st.session_state.start_time = None
+with col3:
+    if st.button("Clear history", use_container_width=True):
+        st.session_state.result_history = []
+        st.session_state.orientation_history = []
+        if os.path.exists(CSV_PATH):
+            os.remove(CSV_PATH)
+        if os.path.exists(ORIENTATION_CSV_PATH):
+            os.remove(ORIENTATION_CSV_PATH)
 
 if st.session_state.reaction_state == "waiting":
     if time.time() >= st.session_state.ready_time:
@@ -123,9 +156,12 @@ if st.session_state.reaction_state == "ready":
     if st.button("Tap!", key="tap_button", use_container_width=True):
         ms = int((time.time() - st.session_state.start_time) * 1000)
         result = {
+            "pilot_name": st.session_state.pilot_name,
             "time": datetime.now().strftime("%m/%d %I:%M %p"),
             "sleep_hours": sleep,
             "reaction_ms": ms,
+            "mission_phase": mission_phase,
+            "notes": st.session_state.notes,
         }
         st.session_state.result_history.append(result)
 
@@ -133,7 +169,6 @@ if st.session_state.reaction_state == "ready":
         history_df.to_csv(CSV_PATH, index=False)
 
         readiness_score, readiness_label = calculate_readiness_score(sleep, ms)
-
         st.session_state.last_reaction_ms = ms
         st.session_state.last_readiness_score = readiness_score
         st.session_state.last_readiness_label = readiness_label
@@ -149,6 +184,9 @@ if st.session_state.reaction_state == "complete":
     st.markdown("---")
     st.subheader("Readiness dashboard")
 
+    strength = get_strength_label(score)
+    message = get_readiness_message(score)
+
     col_a, col_b, col_c, col_d = st.columns(4)
     with col_a:
         st.metric("Sleep", f"{latest['sleep_hours']}h")
@@ -157,7 +195,9 @@ if st.session_state.reaction_state == "complete":
     with col_c:
         st.metric("Readiness score", f"{score}/100")
     with col_d:
-        st.metric("Status", label)
+        st.metric("Status", strength)
+
+    st.success(message)
 
     if st.session_state.result_history:
         history_df = pd.DataFrame(st.session_state.result_history)
@@ -166,14 +206,23 @@ if st.session_state.reaction_state == "complete":
 
         avg_reaction = round(history_df["reaction_ms"].mean())
         avg_sleep = round(history_df["sleep_hours"].mean(), 1)
-
         st.write(f"Average reaction: {avg_reaction} ms")
         st.write(f"Average sleep: {avg_sleep} hours")
 
         st.line_chart(history_df.set_index("time")["reaction_ms"])
 
         st.subheader("Recent results")
-        st.dataframe(history_df, use_container_width=True)
+        st.dataframe(history_df.tail(5), use_container_width=True)
+
+        if st.button("Download reaction log", use_container_width=True):
+            csv = history_df.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="reaction_history.csv",
+                mime="text/csv",
+            )
+
     else:
         st.write("No results yet.")
 
@@ -189,7 +238,8 @@ st.subheader("Orientation challenge")
 
 if st.button("Start orientation drill", key="orientation_start", use_container_width=True):
     st.session_state.orientation_state = "ready"
-    st.session_state.orientation_target = random.choice([-60, -45, -30, 30, 45, 60])
+    tilt_options = [-60, -45, -30, 30, 45, 60]
+    st.session_state.orientation_target = random.choice(tilt_options)
     st.session_state.orientation_start = time.time()
     st.session_state.orientation_answer = "left" if st.session_state.orientation_target < 0 else "right"
 
@@ -199,7 +249,7 @@ if st.session_state.orientation_state == "ready":
         f"<div style='text-align:center; font-size:120px; transform: rotate({tilt}deg);'>✈️</div>",
         unsafe_allow_html=True,
     )
-    st.write(f"Correct the aircraft to level: {st.session_state.orientation_answer.upper()} tilt")
+    st.write(f"Correct the aircraft to level: choose {st.session_state.orientation_answer.upper()}.")
 
     col_left, col_right = st.columns(2)
     with col_left:
@@ -207,11 +257,14 @@ if st.session_state.orientation_state == "ready":
             elapsed_ms = int((time.time() - st.session_state.orientation_start) * 1000)
             accuracy = 1 if st.session_state.orientation_answer == "left" else 0
             result = {
+                "pilot_name": st.session_state.pilot_name,
                 "time": datetime.now().strftime("%m/%d %I:%M %p"),
                 "response_ms": elapsed_ms,
                 "accuracy": accuracy,
                 "expected_direction": st.session_state.orientation_answer,
                 "selected_direction": "left",
+                "mission_phase": mission_phase,
+                "notes": st.session_state.notes,
             }
             st.session_state.orientation_history.append(result)
             pd.DataFrame(st.session_state.orientation_history).to_csv(ORIENTATION_CSV_PATH, index=False)
@@ -224,11 +277,14 @@ if st.session_state.orientation_state == "ready":
             elapsed_ms = int((time.time() - st.session_state.orientation_start) * 1000)
             accuracy = 1 if st.session_state.orientation_answer == "right" else 0
             result = {
+                "pilot_name": st.session_state.pilot_name,
                 "time": datetime.now().strftime("%m/%d %I:%M %p"),
                 "response_ms": elapsed_ms,
                 "accuracy": accuracy,
                 "expected_direction": st.session_state.orientation_answer,
                 "selected_direction": "right",
+                "mission_phase": mission_phase,
+                "notes": st.session_state.notes,
             }
             st.session_state.orientation_history.append(result)
             pd.DataFrame(st.session_state.orientation_history).to_csv(ORIENTATION_CSV_PATH, index=False)
@@ -244,9 +300,15 @@ if st.session_state.orientation_state == "result":
     st.metric("Orientation speed", f"{speed} ms")
     st.metric("Accuracy", f"{accuracy_pct}%")
 
+    if accuracy == 1:
+        st.success("Correct response. Good spatial orientation.")
+    else:
+        st.warning("Incorrect response. Consider more cautious workload management.")
+
     if st.button("Try another orientation", key="orientation_retry", use_container_width=True):
         st.session_state.orientation_state = "ready"
-        st.session_state.orientation_target = random.choice([-60, -45, -30, 30, 45, 60])
+        tilt_options = [-60, -45, -30, 30, 45, 60]
+        st.session_state.orientation_target = random.choice(tilt_options)
         st.session_state.orientation_start = time.time()
         st.session_state.orientation_answer = "left" if st.session_state.orientation_target < 0 else "right"
 
@@ -258,8 +320,44 @@ if st.session_state.orientation_state == "result":
         st.write(f"Average accuracy: {avg_accuracy}%")
         st.dataframe(hist.tail(5), use_container_width=True)
 
+        if st.button("Download orientation log", use_container_width=True):
+            csv = hist.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="orientation_history.csv",
+                mime="text/csv",
+            )
+
 if st.session_state.orientation_history and st.session_state.orientation_state == "idle":
     hist = pd.DataFrame(st.session_state.orientation_history)
     if not hist.empty:
         st.write("Latest orientation results:")
         st.dataframe(hist.tail(5), use_container_width=True)
+
+st.markdown("---")
+st.subheader("Weekly readiness summary")
+
+all_results = []
+if st.session_state.result_history:
+    all_results.extend(st.session_state.result_history)
+if st.session_state.orientation_history:
+    all_results.extend(st.session_state.orientation_history)
+
+if all_results:
+    summary_df = pd.DataFrame(all_results)
+    if "reaction_ms" in summary_df.columns:
+        summary_df["reaction_ms"] = pd.to_numeric(summary_df["reaction_ms"], errors="coerce")
+        summary_df["sleep_hours"] = pd.to_numeric(summary_df.get("sleep_hours", 0), errors="coerce")
+        if not summary_df.empty:
+            avg_reaction = round(summary_df["reaction_ms"].mean())
+            avg_sleep = round(summary_df["sleep_hours"].mean(), 1)
+            st.write(f"Average reaction: {avg_reaction} ms")
+            st.write(f"Average sleep: {avg_sleep} hours")
+
+    if "accuracy" in summary_df.columns:
+        summary_df["accuracy"] = pd.to_numeric(summary_df["accuracy"], errors="coerce")
+        avg_accuracy = round(summary_df["accuracy"].mean() * 100)
+        st.write(f"Average orientation accuracy: {avg_accuracy}%")
+else:
+    st.write("No data yet. Start a test to begin tracking readiness.")
