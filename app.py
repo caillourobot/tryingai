@@ -35,6 +35,7 @@ st.caption("Pilot Fatigue & Readiness Tracker")
 
 CSV_PATH = "reaction_history.csv"
 ORIENTATION_CSV_PATH = "orientation_history.csv"
+MEMORY_CSV_PATH = "memory_history.csv"
 
 
 def calculate_readiness_score(sleep_hours, reaction_ms):
@@ -116,6 +117,29 @@ if "orientation_history" not in st.session_state:
     else:
         st.session_state.orientation_history = []
 
+if "memory_state" not in st.session_state:
+    st.session_state.memory_state = "idle"
+if "memory_sequence" not in st.session_state:
+    st.session_state.memory_sequence = []
+if "memory_guess" not in st.session_state:
+    st.session_state.memory_guess = []
+if "memory_started_at" not in st.session_state:
+    st.session_state.memory_started_at = None
+if "memory_result" not in st.session_state:
+    st.session_state.memory_result = None
+if "memory_history" not in st.session_state:
+    if os.path.exists(MEMORY_CSV_PATH):
+        try:
+            saved_df = pd.read_csv(MEMORY_CSV_PATH)
+            if not saved_df.empty:
+                st.session_state.memory_history = saved_df.to_dict("records")
+            else:
+                st.session_state.memory_history = []
+        except Exception:
+            st.session_state.memory_history = []
+    else:
+        st.session_state.memory_history = []
+
 st.session_state.pilot_name = st.text_input("Pilot name", value=st.session_state.pilot_name)
 st.session_state.notes = st.text_area("Notes", value=st.session_state.notes, placeholder="Late night, missed meal, stress, etc.")
 
@@ -139,10 +163,10 @@ with col3:
     if st.button("Clear history", use_container_width=True):
         st.session_state.result_history = []
         st.session_state.orientation_history = []
-        if os.path.exists(CSV_PATH):
-            os.remove(CSV_PATH)
-        if os.path.exists(ORIENTATION_CSV_PATH):
-            os.remove(ORIENTATION_CSV_PATH)
+        st.session_state.memory_history = []
+        for path in [CSV_PATH, ORIENTATION_CSV_PATH, MEMORY_CSV_PATH]:
+            if os.path.exists(path):
+                os.remove(path)
 
 if st.session_state.reaction_state == "waiting":
     if time.time() >= st.session_state.ready_time:
@@ -336,6 +360,112 @@ if st.session_state.orientation_history and st.session_state.orientation_state =
         st.dataframe(hist.tail(5), use_container_width=True)
 
 st.markdown("---")
+st.subheader("Memory challenge")
+
+memory_icons = ["✈️", "🧭", "⏱️", "📡", "🌙", "⚙️", "🛰️", "🛬", "🛫", "⚡"]
+
+if st.button("Start memory challenge", key="memory_start", use_container_width=True):
+    st.session_state.memory_sequence = random.sample(memory_icons, random.randint(3, 5))
+    st.session_state.memory_guess = []
+    st.session_state.memory_started_at = time.time()
+    st.session_state.memory_state = "showing"
+    st.session_state.memory_result = None
+
+if st.session_state.memory_state == "showing":
+    st.write("Memorize the pattern:")
+    display = " ".join(st.session_state.memory_sequence)
+    st.markdown(f"<div style='font-size:60px; text-align:center'>{display}</div>", unsafe_allow_html=True)
+    if time.time() - st.session_state.memory_started_at >= 3:
+        st.session_state.memory_state = "guessing"
+        st.session_state.memory_started_at = None
+
+if st.session_state.memory_state == "guessing":
+    st.write("Repeat the pattern in order:")
+    cols = st.columns(5)
+    for idx, icon in enumerate(memory_icons):
+        with cols[idx % 5]:
+            if st.button(icon, key=f"memory_icon_{idx}", use_container_width=True):
+                st.session_state.memory_guess.append(icon)
+                expected = st.session_state.memory_sequence[len(st.session_state.memory_guess) - 1]
+                if icon != expected:
+                    st.session_state.memory_result = {
+                        "passed": False,
+                        "message": "Incorrect sequence. Try again.",
+                        "guess": st.session_state.memory_guess.copy(),
+                    }
+                    st.session_state.memory_state = "result"
+                    memory_record = {
+                        "pilot_name": st.session_state.pilot_name,
+                        "time": datetime.now().strftime("%m/%d %I:%M %p"),
+                        "score": 0,
+                        "correct": 0,
+                        "sequence": "".join(st.session_state.memory_sequence),
+                        "guess": "".join(st.session_state.memory_guess),
+                        "mission_phase": mission_phase,
+                        "notes": st.session_state.notes,
+                    }
+                    st.session_state.memory_history.append(memory_record)
+                    pd.DataFrame(st.session_state.memory_history).to_csv(MEMORY_CSV_PATH, index=False)
+                elif len(st.session_state.memory_guess) == len(st.session_state.memory_sequence):
+                    st.session_state.memory_result = {
+                        "passed": True,
+                        "message": "Perfect memory. Sequence matched.",
+                        "guess": st.session_state.memory_guess.copy(),
+                    }
+                    st.session_state.memory_state = "result"
+                    memory_record = {
+                        "pilot_name": st.session_state.pilot_name,
+                        "time": datetime.now().strftime("%m/%d %I:%M %p"),
+                        "score": 100,
+                        "correct": len(st.session_state.memory_sequence),
+                        "sequence": "".join(st.session_state.memory_sequence),
+                        "guess": "".join(st.session_state.memory_guess),
+                        "mission_phase": mission_phase,
+                        "notes": st.session_state.notes,
+                    }
+                    st.session_state.memory_history.append(memory_record)
+                    pd.DataFrame(st.session_state.memory_history).to_csv(MEMORY_CSV_PATH, index=False)
+
+    if st.session_state.memory_guess:
+        st.write("Your current guess: " + " ".join(st.session_state.memory_guess))
+
+if st.session_state.memory_state == "result":
+    if st.session_state.memory_result:
+        if st.session_state.memory_result["passed"]:
+            st.success(st.session_state.memory_result["message"])
+            st.metric("Memory score", "100%")
+        else:
+            st.warning(st.session_state.memory_result["message"])
+            st.metric("Memory score", "0%")
+
+    if st.button("Try another memory challenge", key="memory_retry", use_container_width=True):
+        st.session_state.memory_sequence = random.sample(memory_icons, random.randint(3, 5))
+        st.session_state.memory_guess = []
+        st.session_state.memory_state = "showing"
+        st.session_state.memory_started_at = time.time()
+        st.session_state.memory_result = None
+
+    if st.session_state.memory_history:
+        hist = pd.DataFrame(st.session_state.memory_history)
+        st.subheader("Latest memory results")
+        st.dataframe(hist.tail(5), use_container_width=True)
+
+        if st.button("Download memory log", use_container_width=True):
+            csv = hist.to_csv(index=False)
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name="memory_history.csv",
+                mime="text/csv",
+            )
+
+if st.session_state.memory_history and st.session_state.memory_state == "idle":
+    hist = pd.DataFrame(st.session_state.memory_history)
+    if not hist.empty:
+        st.write("Latest memory results:")
+        st.dataframe(hist.tail(5), use_container_width=True)
+
+st.markdown("---")
 st.subheader("Weekly readiness summary")
 
 all_results = []
@@ -343,6 +473,8 @@ if st.session_state.result_history:
     all_results.extend(st.session_state.result_history)
 if st.session_state.orientation_history:
     all_results.extend(st.session_state.orientation_history)
+if st.session_state.memory_history:
+    all_results.extend(st.session_state.memory_history)
 
 if all_results:
     summary_df = pd.DataFrame(all_results)
@@ -359,5 +491,9 @@ if all_results:
         summary_df["accuracy"] = pd.to_numeric(summary_df["accuracy"], errors="coerce")
         avg_accuracy = round(summary_df["accuracy"].mean() * 100)
         st.write(f"Average orientation accuracy: {avg_accuracy}%")
+
+    if "score" in summary_df.columns:
+        avg_memory = round(summary_df["score"].mean())
+        st.write(f"Average memory score: {avg_memory}%")
 else:
     st.write("No data yet. Start a test to begin tracking readiness.")
